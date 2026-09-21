@@ -4,4 +4,6 @@
 typedef struct { int32_t pid; int32_t parent; uint64_t cpu_ns; uint64_t resident; char name[256]; char path[1024]; } PulseProcess;
 int pulse_processes(PulseProcess *output, int capacity);
 double pulse_temperature(void);
+int32_t pulse_prevent_display_sleep(uint32_t *assertion_id);
+int32_t pulse_allow_display_sleep(uint32_t assertion_id);
 #endif

@@ -57,7 +57,7 @@ final class NoriAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
         MenuBarExtra {
             MenuContent(monitor: monitor)
         } label: {
-            Image(systemName: "waveform.path.ecg")
+            Image(systemName: monitor.keepAwake ? "sun.max.fill" : "waveform.path.ecg")
             Text(monitor.reading.valid ? "\(Int(monitor.reading.cpu))%" : "Nori")
         }
     }
@@ -73,6 +73,7 @@ struct MenuContent: View {
         if monitor.reading.temperature > 0 { Text("Sensors: \(Int(monitor.reading.temperature))°C") }
         Divider()
         Button("Open Nori") { NSApp.activate(ignoringOtherApps: true); if let window = NSApp.windows.first(where: { $0.title == "Nori" }) { window.makeKeyAndOrderFront(nil) } else { openWindow(id: "dashboard") } }
+        Button(monitor.keepAwake ? "Stop Keeping Screen Awake" : "Keep Screen Awake") { monitor.toggleKeepAwake() }
         Button(monitor.paused ? "Resume monitoring" : "Pause monitoring") { monitor.paused.toggle() }
         Divider()
         Button("Quit Nori") { NSApp.terminate(nil) }.keyboardShortcut("q")
@@ -106,6 +107,7 @@ struct Dashboard: View {
                         }
                         Spacer()
                     }.padding(16).background(ocean.opacity(0.06), in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(ocean.opacity(0.13)))
+                    KeepAwakeCard(monitor: monitor).id("Awake")
                     MemoryPressureCard(monitor: monitor).id("Memory")
                     activity
                     TemperatureHistoryCard(monitor: monitor).id("Temperature")
@@ -137,7 +139,7 @@ struct Dashboard: View {
             }.padding(.top, 34)
             Text("YOUR MAC, AT A GLANCE").font(.system(size: 9, weight: .semibold)).tracking(1.5).foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(["Overview", "Apps", "Docker", "Caches", "Memory", "Temperature", "Alerts"], id: \.self) { section in
+                ForEach(["Overview", "Awake", "Apps", "Docker", "Caches", "Memory", "Temperature", "Alerts"], id: \.self) { section in
                     Button { withAnimation { proxy.scrollTo(section, anchor: .top) } } label: {
                         HStack {
                             Text(section)
@@ -229,6 +231,54 @@ struct Dashboard: View {
                 .chartYAxis { AxisMarks(position: .leading, values: [0, 50, 100]) { value in AxisGridLine().foregroundStyle(.white.opacity(0.05)); AxisValueLabel { Text("\(value.as(Int.self) ?? 0)%").font(.system(size: 9)).foregroundStyle(.secondary) } } }
                 .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in AxisValueLabel(format: .dateTime.hour().minute().second()).font(.system(size: 9)) } }.frame(height: 140)
         }.padding(20).background(panel, in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+struct KeepAwakeCard: View {
+    @ObservedObject var monitor: Monitor
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: monitor.keepAwake ? "sun.max.fill" : "moon.zzz")
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(monitor.keepAwake ? ocean : Color.secondary)
+                .frame(width: 38, height: 38)
+                .background((monitor.keepAwake ? ocean : Color.white).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 7) {
+                    Text("Keep screen awake").font(.system(size: 15, weight: .semibold))
+                    if monitor.keepAwake {
+                        Text("ACTIVE").font(.system(size: 9, weight: .bold)).tracking(1)
+                            .foregroundStyle(ocean).padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(ocean.opacity(0.12), in: Capsule())
+                    }
+                }
+                Text(monitor.keepAwake
+                     ? "Nori is keeping the display and Mac awake while your work runs."
+                     : "Start this before walking away; stop it to restore your normal macOS sleep timer.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                if let error = monitor.keepAwakeError {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10)).foregroundStyle(.orange)
+                }
+            }
+            Spacer()
+            Button {
+                monitor.toggleKeepAwake()
+            } label: {
+                Label(monitor.keepAwake ? "Stop" : "Start", systemImage: monitor.keepAwake ? "stop.fill" : "play.fill")
+                    .frame(minWidth: 72)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(monitor.keepAwake ? Color.orange : ocean)
+            .controlSize(.large)
+            .keyboardShortcut("k", modifiers: [.command, .shift])
+            .help(monitor.keepAwake ? "Restore normal display and system sleep" : "Keep this Mac awake until stopped or Nori quits")
+        }
+        .padding(18)
+        .background(panel, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke((monitor.keepAwake ? ocean : Color.white).opacity(monitor.keepAwake ? 0.4 : 0.055)))
+        .accessibilityElement(children: .contain)
     }
 }
 

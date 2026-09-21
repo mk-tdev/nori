@@ -2,6 +2,42 @@ import XCTest
 @testable import Pulse
 
 final class NoriTests: XCTestCase {
+    func testKeepAwakeSessionStartsOnceAndReleasesItsAssertion() {
+        var acquisitions = 0
+        var released: [UInt32] = []
+        let session = KeepAwakeSession(
+            acquire: { acquisitions += 1; return (42, 0) },
+            release: { released.append($0); return 0 }
+        )
+        XCTAssertFalse(session.isActive)
+        XCTAssertNil(session.start())
+        XCTAssertNil(session.start())
+        XCTAssertTrue(session.isActive)
+        XCTAssertEqual(acquisitions, 1)
+        XCTAssertNil(session.stop())
+        XCTAssertFalse(session.isActive)
+        XCTAssertEqual(released, [42])
+    }
+
+    func testKeepAwakeSessionReportsAcquireAndReleaseFailures() {
+        let acquireFailure = KeepAwakeSession(acquire: { (nil, -1) }, release: { _ in 0 })
+        XCTAssertEqual(acquireFailure.start(), -1)
+        XCTAssertFalse(acquireFailure.isActive)
+
+        let releaseFailure = KeepAwakeSession(acquire: { (7, 0) }, release: { _ in -2 })
+        XCTAssertNil(releaseFailure.start())
+        XCTAssertEqual(releaseFailure.stop(), -2)
+        XCTAssertTrue(releaseFailure.isActive)
+    }
+
+    func testLiveKeepAwakeAssertionCanBeStartedAndStopped() throws {
+        let session = KeepAwakeSession()
+        XCTAssertNil(session.start())
+        XCTAssertTrue(session.isActive)
+        XCTAssertNil(session.stop())
+        XCTAssertFalse(session.isActive)
+    }
+
     func testGroupsHelpersAndChildrenWithoutDoubleCounting() {
         let inputs = [
             ProcessReading(id: 1, name: "Codex", cpu: 20, memory: 100, path: "/Applications/Codex.app/Contents/MacOS/Codex"),

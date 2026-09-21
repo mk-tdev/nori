@@ -3,8 +3,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <IOKit/IOKitLib.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
 #include <mach/mach.h>
 #include <mach/mach_time.h>
+
+int32_t pulse_prevent_display_sleep(uint32_t *assertion_id) {
+    if (!assertion_id) return kIOReturnBadArgument;
+    return IOPMAssertionCreateWithName(
+        kIOPMAssertPreventUserIdleDisplaySleep,
+        kIOPMAssertionLevelOn,
+        CFSTR("Nori Keep Awake"),
+        assertion_id
+    );
+}
+
+int32_t pulse_allow_display_sleep(uint32_t assertion_id) {
+    return IOPMAssertionRelease(assertion_id);
+}
+
 int pulse_processes(PulseProcess *out, int capacity) {
     mach_timebase_info_data_t timebase;
     mach_timebase_info(&timebase);

@@ -137,7 +137,10 @@ final class Collector: @unchecked Sendable {
     @Published var alertsEnabled = true { didSet { alertEngine.reset() } }
     @Published var notificationStatus = "Optional: send alerts to Notification Center"
     @Published var notificationsEnabled = false
+    @Published private(set) var keepAwake = false
+    @Published private(set) var keepAwakeError: String?
     private var alertEngine = SustainedAlertEngine()
+    private let keepAwakeSession = KeepAwakeSession()
     private var lastDockerAttempt = Date.distantPast
     private let dockerQueue = DispatchQueue(label: "Nori.docker", qos: .utility)
     private let cacheQueue = DispatchQueue(label: "Nori.caches", qos: .utility)
@@ -262,6 +265,11 @@ final class Collector: @unchecked Sendable {
                 if let error { self?.notificationStatus = error.localizedDescription }
             }
         }
+    }
+    func toggleKeepAwake() {
+        let error = keepAwake ? keepAwakeSession.stop() : keepAwakeSession.start()
+        keepAwake = keepAwakeSession.isActive
+        keepAwakeError = error.map { String(format: "macOS could not change the sleep assertion (0x%08X).", UInt32(bitPattern: $0)) }
     }
     var thermalName: String {
         switch thermal { case .nominal: "Normal"; case .fair: "Warm"; case .serious: "Hot"; case .critical: "Critical"; @unknown default: "Unknown" }
