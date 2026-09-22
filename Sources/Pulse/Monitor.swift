@@ -9,6 +9,7 @@ struct Sample: Identifiable {
     let time: Date
     let cpu: Double
     let memory: Double
+    let gpu: Double?
     let temperature: Double?
 }
 struct Reading {
@@ -23,6 +24,7 @@ struct Reading {
     var diskFree: Int64 = 0
     var diskTotal: Int64 = 1
     var temperature: Double = -1
+    var gpu = GPUReading()
     var processes: [ProcessReading] = []
     var time = Date()
     var valid = false
@@ -31,6 +33,7 @@ final class Collector: @unchecked Sendable {
     private var oldTicks: [UInt64]?
     private var oldCoreTicks: [[UInt64]]?
     private var oldProcesses: [Int32: UInt64] = [:]
+    private var oldGPUProcesses: [Int32: UInt64] = [:]
     private var oldPageouts: UInt64?
     private var oldVMTime: TimeInterval?
     private var oldTime = ProcessInfo.processInfo.systemUptime
@@ -114,9 +117,37 @@ final class Collector: @unchecked Sendable {
             next[p.pid] = p.cpu_ns
             r.processes.append(ProcessReading(id: p.pid, name: name.isEmpty ? "Process \(p.pid)" : name, cpu: cpu, memory: p.resident, parent: p.parent, path: path))
         }
-        oldProcesses = next; oldTime = now
+        oldProcesses = next
         r.processes = AppGrouping.assign(r.processes)
         r.processes.sort { $0.cpu > $1.cpu }
+        var gpuStats = PulseGPUStats()
+        var gpuProcesses = [PulseGPUProcess](repeating: PulseGPUProcess(), count: 4096)
+        let gpuCount = pulse_gpu_stats(&gpuStats, &gpuProcesses, Int32(gpuProcesses.count))
+        r.gpu.device = gpuStats.device
+        r.gpu.renderer = gpuStats.renderer
+        r.gpu.tiler = gpuStats.tiler
+        r.gpu.allocatedMemory = gpuStats.allocated_memory
+        r.gpu.inUseMemory = gpuStats.in_use_memory
+        r.gpu.coreCount = Int(gpuStats.core_count)
+        var nextGPU: [Int32: UInt64] = [:]
+        var gpuNames: [Int32: String] = [:]
+        for var process in gpuProcesses.prefix(Int(gpuCount)) {
+            let name = withUnsafePointer(to: &process.name) { pointer in
+                pointer.withMemoryRebound(to: CChar.self, capacity: 256) { String(cString: $0) }
+            }
+            nextGPU[process.pid, default: 0] += process.gpu_ns
+            if !name.isEmpty { gpuNames[process.pid] = name }
+        }
+        var gpuUsage: [GPUAttribution.ProcessUsage] = []
+        for (pid, total) in nextGPU {
+            let previous = oldGPUProcesses[pid]
+            let usage = previous.map { total >= $0 ? Double(total - $0) / elapsed / 1_000_000_000 * 100 : 0 } ?? 0
+            if usage > 0.01 { gpuUsage.append(.init(pid: pid, name: gpuNames[pid] ?? "GPU process", usage: usage)) }
+        }
+        oldGPUProcesses = nextGPU
+        let owners = Dictionary(r.processes.map { ($0.id, $0.app.isEmpty ? $0.name : $0.app) }, uniquingKeysWith: { first, _ in first })
+        r.gpu.apps = GPUAttribution.groups(gpuUsage, owners: owners)
+        oldTime = now
         return r
     }
 }
@@ -168,7 +199,7 @@ final class Collector: @unchecked Sendable {
                 guard !self.paused else { return }
                 self.reading = result
                 self.thermal = ProcessInfo.processInfo.thermalState
-                if result.valid { self.history.append(Sample(time: result.time, cpu: result.cpu, memory: result.memory, temperature: result.temperature > 0 ? result.temperature : nil)) }
+                if result.valid { self.history.append(Sample(time: result.time, cpu: result.cpu, memory: result.memory, gpu: result.gpu.available ? result.gpu.device : nil, temperature: result.temperature > 0 ? result.temperature : nil)) }
                 self.evaluateAlerts(result)
                 self.history.removeAll { $0.time < Date().addingTimeInterval(-900) }
             }

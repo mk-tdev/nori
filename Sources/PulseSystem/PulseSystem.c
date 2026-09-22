@@ -1,11 +1,90 @@
 #include "PulseSystem.h"
 #include <libproc.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <IOKit/IOKitLib.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <mach/mach.h>
 #include <mach/mach_time.h>
+
+static uint64_t dictionary_number(CFDictionaryRef dictionary, CFStringRef key, uint64_t fallback) {
+    if (!dictionary) return fallback;
+    CFTypeRef value = CFDictionaryGetValue(dictionary, key);
+    if (!value || CFGetTypeID(value) != CFNumberGetTypeID()) return fallback;
+    int64_t number = 0;
+    return CFNumberGetValue((CFNumberRef)value, kCFNumberSInt64Type, &number) && number >= 0 ? (uint64_t)number : fallback;
+}
+
+static io_service_t gpu_service(void) {
+    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AGXAccelerator"));
+    if (!service) service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOAccelerator"));
+    return service;
+}
+
+int pulse_gpu_stats(PulseGPUStats *stats, PulseGPUProcess *processes, int capacity) {
+    if (!stats) return 0;
+    memset(stats, 0, sizeof(*stats));
+    stats->device = stats->renderer = stats->tiler = -1;
+    io_service_t service = gpu_service();
+    if (!service) return 0;
+
+    CFTypeRef performance = IORegistryEntryCreateCFProperty(service, CFSTR("PerformanceStatistics"), kCFAllocatorDefault, 0);
+    if (performance && CFGetTypeID(performance) == CFDictionaryGetTypeID()) {
+        CFDictionaryRef values = (CFDictionaryRef)performance;
+        uint64_t device = dictionary_number(values, CFSTR("Device Utilization %"), UINT64_MAX);
+        uint64_t renderer = dictionary_number(values, CFSTR("Renderer Utilization %"), UINT64_MAX);
+        uint64_t tiler = dictionary_number(values, CFSTR("Tiler Utilization %"), UINT64_MAX);
+        if (device != UINT64_MAX) stats->device = (double)device;
+        if (renderer != UINT64_MAX) stats->renderer = (double)renderer;
+        if (tiler != UINT64_MAX) stats->tiler = (double)tiler;
+        stats->allocated_memory = dictionary_number(values, CFSTR("Alloc system memory"), 0);
+        stats->in_use_memory = dictionary_number(values, CFSTR("In use system memory"), 0);
+    }
+    if (performance) CFRelease(performance);
+
+    CFTypeRef cores = IORegistryEntryCreateCFProperty(service, CFSTR("gpu-core-count"), kCFAllocatorDefault, 0);
+    if (cores && CFGetTypeID(cores) == CFNumberGetTypeID()) {
+        int32_t count = 0;
+        if (CFNumberGetValue((CFNumberRef)cores, kCFNumberSInt32Type, &count)) stats->core_count = count;
+    }
+    if (cores) CFRelease(cores);
+
+    int output_count = 0;
+    io_iterator_t iterator = 0;
+    if (processes && capacity > 0 && IORegistryEntryCreateIterator(service, kIOServicePlane, kIORegistryIterateRecursively, &iterator) == KERN_SUCCESS) {
+        io_registry_entry_t entry;
+        while (output_count < capacity && (entry = IOIteratorNext(iterator))) {
+            CFTypeRef creator = IORegistryEntryCreateCFProperty(entry, CFSTR("IOUserClientCreator"), kCFAllocatorDefault, 0);
+            CFTypeRef usage = IORegistryEntryCreateCFProperty(entry, CFSTR("AppUsage"), kCFAllocatorDefault, 0);
+            if (creator && usage && CFGetTypeID(creator) == CFStringGetTypeID() && CFGetTypeID(usage) == CFArrayGetTypeID()) {
+                char text[512] = {0}; int pid = 0;
+                if (CFStringGetCString((CFStringRef)creator, text, sizeof(text), kCFStringEncodingUTF8) && sscanf(text, "pid %d", &pid) == 1 && pid > 0) {
+                    uint64_t total = 0;
+                    CFArrayRef items = (CFArrayRef)usage;
+                    for (CFIndex index = 0; index < CFArrayGetCount(items); index++) {
+                        CFTypeRef item = CFArrayGetValueAtIndex(items, index);
+                        if (item && CFGetTypeID(item) == CFDictionaryGetTypeID()) total += dictionary_number((CFDictionaryRef)item, CFSTR("accumulatedGPUTime"), 0);
+                    }
+                    processes[output_count].pid = pid;
+                    processes[output_count].gpu_ns = total;
+                    memset(processes[output_count].name, 0, sizeof(processes[output_count].name));
+                    const char *name = strchr(text, ',');
+                    if (name) { name++; while (*name == ' ') name++; }
+                    else name = "GPU process";
+                    strncpy(processes[output_count].name, name, sizeof(processes[output_count].name) - 1);
+                    output_count++;
+                }
+            }
+            if (creator) CFRelease(creator);
+            if (usage) CFRelease(usage);
+            IOObjectRelease(entry);
+        }
+        IOObjectRelease(iterator);
+    }
+    IOObjectRelease(service);
+    return output_count;
+}
 
 int32_t pulse_prevent_display_sleep(uint32_t *assertion_id) {
     if (!assertion_id) return kIOReturnBadArgument;

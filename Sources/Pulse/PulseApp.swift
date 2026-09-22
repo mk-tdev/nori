@@ -4,6 +4,7 @@ import AppKit
 import UserNotifications
 
 let ocean = Color(red: 0.24, green: 0.69, blue: 0.98)
+let gpuBlue = Color(red: 0.48, green: 0.55, blue: 1.0)
 let canvas = Color(red: 0.018, green: 0.065, blue: 0.12)
 let panel = Color(red: 0.032, green: 0.115, blue: 0.20)
 
@@ -32,6 +33,8 @@ final class NoriAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
             let r = collector.collect()
             print("CPU: \(r.cpu)% | Memory: \(bytes(r.usedMemory)) | Swap: \(bytes(r.swap))")
             print("Temperature: \(r.temperature) °C (-1 means unavailable) | Processes: \(r.processes.count)")
+            print("GPU: \(r.gpu.device)% | Renderer: \(r.gpu.renderer)% | Tiler: \(r.gpu.tiler)% | Cores: \(r.gpu.coreCount) | Memory: \(bytes(r.gpu.inUseMemory))")
+            for app in r.gpu.apps.prefix(5) { print("GPU app \(app.name): \(String(format: "%.1f", app.usage))%") }
             print("Memory pressure: \(r.pressure.rawValue) | App groups: \(AppGrouping.groups(r.processes).count)")
             if CommandLine.arguments.contains("--docker") { let docker = DockerCollector.collect(); print("Docker: \(docker.status)"); for c in docker.containers { print("\(c.name): \(c.cpuText) CPU, \(c.memoryText)") } }
             if CommandLine.arguments.contains("--caches") {
@@ -66,7 +69,8 @@ struct MenuContent: View {
     @ObservedObject var monitor: Monitor
     @Environment(\.openWindow) var openWindow
     var body: some View {
-        Text("CPU: \(Int(monitor.reading.cpu))% · Memory: \(Int(monitor.reading.memory))%")
+        Text("CPU: \(Int(monitor.reading.cpu))% · GPU: \(monitor.reading.gpu.available ? "\(Int(monitor.reading.gpu.device))%" : "Unavailable")")
+        Text("Memory: \(Int(monitor.reading.memory))%")
         Text("Thermal state: \(monitor.thermalName)")
         Text("Memory pressure: \(monitor.reading.pressure.rawValue)")
         Text("Sustained-load alerts: \(monitor.alerts.count)")
@@ -96,6 +100,11 @@ struct Dashboard: View {
                         }.buttonStyle(.plain).frame(maxWidth: .infinity)
                             .help("Show live workload for every CPU core")
                             .accessibilityLabel("CPU usage. Show per-core workload")
+                        Button { withAnimation { proxy.scrollTo("GPU", anchor: .top) } } label: {
+                            metric("GPU USAGE  ↘", symbol: "square.3.layers.3d", value: monitor.reading.gpu.available ? "\(Int(monitor.reading.gpu.device))" : "—", unit: "%", detail: monitor.reading.gpu.available ? "\(monitor.reading.gpu.coreCount) cores · click for apps" : "GPU counters unavailable", fraction: monitor.reading.gpu.available ? monitor.reading.gpu.device / 100 : nil, color: gpuBlue)
+                        }.buttonStyle(.plain).frame(maxWidth: .infinity)
+                            .help("Show renderer, tiler, memory, and apps using the GPU")
+                            .accessibilityLabel("GPU usage. Show GPU details")
                         metric("MEMORY", symbol: "memorychip", value: String(format: "%.1f", Double(monitor.reading.usedMemory) / 1_073_741_824), unit: "GB", detail: "of \(bytes(ProcessInfo.processInfo.physicalMemory)) physical memory", fraction: monitor.reading.memory / 100, color: Color(red: 0.38, green: 0.82, blue: 0.89))
                         temperatureCard
                     }
@@ -108,6 +117,7 @@ struct Dashboard: View {
                         Spacer()
                     }.padding(16).background(ocean.opacity(0.06), in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(ocean.opacity(0.13)))
                     KeepAwakeCard(monitor: monitor).id("Awake")
+                    GPUCard(monitor: monitor).id("GPU")
                     MemoryPressureCard(monitor: monitor).id("Memory")
                     activity
                     TemperatureHistoryCard(monitor: monitor).id("Temperature")
@@ -139,7 +149,7 @@ struct Dashboard: View {
             }.padding(.top, 34)
             Text("YOUR MAC, AT A GLANCE").font(.system(size: 9, weight: .semibold)).tracking(1.5).foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(["Overview", "Awake", "Apps", "Docker", "Caches", "Memory", "Temperature", "Alerts"], id: \.self) { section in
+                ForEach(["Overview", "Awake", "GPU", "Apps", "Docker", "Caches", "Memory", "Temperature", "Alerts"], id: \.self) { section in
                     Button { withAnimation { proxy.scrollTo(section, anchor: .top) } } label: {
                         HStack {
                             Text(section)
@@ -220,11 +230,15 @@ struct Dashboard: View {
                 Text("/ last 2 minutes").font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 Label("CPU", systemImage: "circle.fill").foregroundStyle(ocean)
+                Label("GPU", systemImage: "circle.fill").foregroundStyle(gpuBlue)
                 Label("Memory", systemImage: "circle.fill").foregroundStyle(Color(red: 0.38, green: 0.82, blue: 0.89))
             }.font(.system(size: 10))
             Chart {
                 ForEach(monitor.history.filter { $0.time >= monitor.reading.time.addingTimeInterval(-120) }) { sample in
                     LineMark(x: .value("Time", sample.time), y: .value("Usage", sample.cpu), series: .value("Metric", "CPU")).foregroundStyle(ocean).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.linear)
+                    if let gpu = sample.gpu {
+                        LineMark(x: .value("Time", sample.time), y: .value("Usage", gpu), series: .value("Metric", "GPU")).foregroundStyle(gpuBlue).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.linear)
+                    }
                     LineMark(x: .value("Time", sample.time), y: .value("Usage", sample.memory), series: .value("Metric", "Memory")).foregroundStyle(Color(red: 0.38, green: 0.82, blue: 0.89)).lineStyle(StrokeStyle(lineWidth: 1.5)).interpolationMethod(.linear)
                 }
             }.chartYScale(domain: 0...100).chartXScale(domain: monitor.reading.time.addingTimeInterval(-120)...monitor.reading.time)

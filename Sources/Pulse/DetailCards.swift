@@ -7,6 +7,81 @@ extension MemoryPressure {
         switch self { case .normal: .cyan; case .warning: .orange; case .critical: .red; case .unknown: .gray }
     }
 }
+struct GPUCard: View {
+    @ObservedObject var monitor: Monitor
+    private var gpu: GPUReading { monitor.reading.gpu }
+
+    private func engine(_ title: String, value: Double, explanation: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title).font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
+                Spacer()
+                Text(value >= 0 ? "\(Int(value))%" : "—").font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(gpuBlue)
+            }
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.06))
+                    Capsule().fill(gpuBlue).frame(width: geometry.size.width * max(0, min(1, value / 100)))
+                }
+            }.frame(height: 5)
+            Text(explanation).font(.system(size: 10)).foregroundStyle(.secondary)
+        }.padding(12).background(.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Label("GPU activity", systemImage: "square.3.layers.3d").font(.system(size: 15, weight: .semibold))
+                Spacer()
+                if gpu.available {
+                    Text("\(gpu.name) · \(gpu.coreCount) cores").font(.system(size: 11, weight: .medium)).foregroundStyle(gpuBlue)
+                } else {
+                    Text("Unavailable").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                }
+            }
+            if gpu.available {
+                HStack(spacing: 10) {
+                    engine("DEVICE", value: gpu.device, explanation: "Overall GPU work")
+                    engine("RENDERER", value: gpu.renderer, explanation: "Drawing pixels and compute")
+                    engine("TILER", value: gpu.tiler, explanation: "Preparing geometry and scenes")
+                }
+                HStack(spacing: 22) {
+                    Label("In use: \(bytes(gpu.inUseMemory))", systemImage: "memorychip")
+                    Text("Allocated: \(bytes(gpu.allocatedMemory))")
+                    Spacer()
+                    Text("Unified memory shared with the CPU")
+                }.font(.system(size: 10)).foregroundStyle(.secondary)
+                Divider()
+                HStack {
+                    Text("Apps using the GPU now").font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Text("GPU TIME").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                if gpu.apps.isEmpty {
+                    Text("No app accumulated measurable GPU time in the latest interval.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary).padding(.vertical, 4)
+                } else {
+                    ForEach(gpu.apps.prefix(6)) { app in
+                        HStack(spacing: 10) {
+                            Image(systemName: "app.connected.to.app.below.fill").foregroundStyle(gpuBlue).frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(app.name).font(.system(size: 12, weight: .medium))
+                                Text("\(app.processCount) GPU process\(app.processCount == 1 ? "" : "es")").font(.system(size: 10)).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(String(format: "%.1f%%", app.usage)).font(.system(size: 12, design: .monospaced)).foregroundStyle(gpuBlue)
+                        }
+                    }
+                }
+                Text("GPU time is derived from Metal driver counters over each two-second sample. Video playback, window effects, games, AI, 3D, and some browser work can use the GPU. App totals may not equal device utilization because the counters measure different parts of the graphics pipeline.")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            } else {
+                ContentUnavailableView("GPU counters unavailable", systemImage: "square.3.layers.3d", description: Text("This Mac or macOS version does not expose compatible IOKit GPU statistics."))
+                    .frame(maxWidth: .infinity, minHeight: 120)
+            }
+        }.padding(20).background(panel, in: RoundedRectangle(cornerRadius: 14))
+    }
+}
 struct MemoryPressureCard: View {
     @ObservedObject var monitor: Monitor
     var body: some View {

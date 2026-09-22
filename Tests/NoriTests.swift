@@ -2,6 +2,17 @@ import XCTest
 @testable import Pulse
 
 final class NoriTests: XCTestCase {
+    func testGPUAttributionCombinesProcessesByOwningApp() {
+        let usage = [
+            GPUAttribution.ProcessUsage(pid: 10, name: "Codex Helper", usage: 12.5),
+            GPUAttribution.ProcessUsage(pid: 11, name: "node", usage: 7.5),
+            GPUAttribution.ProcessUsage(pid: 20, name: "WindowServer", usage: 4)
+        ]
+        let groups = GPUAttribution.groups(usage, owners: [10: "Codex", 11: "Codex"])
+        XCTAssertEqual(groups.first, GPUAppReading(name: "Codex", usage: 20, processCount: 2))
+        XCTAssertEqual(groups.last, GPUAppReading(name: "WindowServer", usage: 4, processCount: 1))
+    }
+
     func testKeepAwakeSessionStartsOnceAndReleasesItsAssertion() {
         var acquisitions = 0
         var released: [UInt32] = []

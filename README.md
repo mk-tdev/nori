@@ -17,6 +17,7 @@ The build needs Xcode command-line tools and Python 3 for the ICNS container. Th
 
 - System CPU and memory, sampled every two seconds on a background queue.
 - Click CPU for per-logical-core workloads. Core numbers follow macOS order; performance/efficiency types are not inferred.
+- Live GPU device, renderer, and tiler utilization; GPU core count; driver memory; a two-minute activity line; and per-app GPU-time attribution from Metal driver counters. No administrator access or `powermetrics` process is required. Compatible IOKit counters are hardware and macOS dependent, so unsupported Macs show an explicit unavailable state.
 - App totals combine identifiable helper bundles and descendant processes. Known Codex, Claude, Chrome, and Docker helpers are normalized even when distributed inside another host bundle. Unknown owners remain under the executable name. Search, CPU/memory sorting, Show all, and a live process drill-down are available.
 - Local Docker container CPU, memory usage/limit, memory percentage, network totals, block I/O totals, and PID count, refreshed every ten seconds on a separate queue. Refresh is available manually. Requires an installed Docker CLI and a running local Docker Desktop-compatible Unix socket. Remote contexts are deliberately not used. Missing CLI, unavailable daemon, timeouts, malformed responses, and no running containers have explicit states. No containers are started, stopped, or modified.
 - Developer cache sizes for known npm, npx, Yarn, pnpm, Bun, Deno, uv, pip, Homebrew, Go, Cargo, Gradle, Maven, Xcode, SwiftPM, Playwright, Puppeteer, Codex, and Claude locations. The entire section can be minimized. Every rebuildable cache row has a one-click Clean action scoped to that exact directory; it disappears from the list after successful cleanup and reports failures inline. Codex and Claude session transcripts, generated images, installed plugins, and the Docker VM disk image are protected tool data and never receive a Clean action. Sizes are measured only when you press Scan, never on the two-second loop.
@@ -34,7 +35,7 @@ Process memory totals sum resident sizes and may count shared pages multiple tim
 
 Cache sizes are allocated blocks reported by `du` at scan time, not live values, and a large scan takes several seconds. Catalog paths never nest inside one another, so the reclaimable-cache and tool-data totals do not double-count; locations outside the catalog are not measured, so the totals are a floor, not your whole disk. Reclaimable cache and tool data are separate totals and should not be added together.
 
-AppleSMC is a private, hardware-dependent read-only interface. Sensor averages are not guaranteed package temperatures, and not every Mac exposes the same sensors. The app never writes fan or power settings. Sampling and history remain local, and no administrator helper or telemetry is installed.
+AppleSMC temperature access and IOKit GPU driver counters are private, hardware-dependent, read-only interfaces. Sensor averages are not guaranteed package temperatures, GPU app time and device utilization measure different parts of the graphics pipeline, and not every Mac exposes the same values. The app never writes fan or power settings. Sampling and history remain local, and no administrator helper or telemetry is installed.
 
 ## Verification
 
