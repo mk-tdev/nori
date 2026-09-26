@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test
+        run: swift test
+      - name: Build Apple Silicon app
+        run: ./scripts/build-app.sh
+      - name: Verify version and architecture
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/Nori.app/Contents/Info.plist)
+          test "v${version}" = "${GITHUB_REF_NAME}"
+          file dist/Nori.app/Contents/MacOS/Nori | grep -q 'arm64'
+          if file dist/Nori.app/Contents/MacOS/Nori | grep -q 'x86_64'; then
+            echo 'Release unexpectedly contains Intel code.' >&2
+            exit 1
+          fi
+      - name: Package release
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          mkdir -p release
+          archive="Nori-${version}-apple-silicon.zip"
+          ditto -c -k --sequesterRsrc --keepParent dist/Nori.app "release/${archive}"
+          cd release
+          shasum -a 256 "${archive}" > "${archive}.sha256"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          notes=/tmp/nori-release-notes.md
+          printf '%s\n' \
+            "Nori ${version} for Apple Silicon Macs running macOS 14 or newer." \
+            "" \
+            "Download the ZIP, move Nori.app to Applications, and open it once. Because this free build is not notarized, macOS may block the first launch. If it does, open System Settings → Privacy & Security and choose Open Anyway." \
+            "" \
+            "The SHA-256 file lets you verify the download before opening it." > "${notes}"
+          gh release create "${GITHUB_REF_NAME}" release/* \
+            --verify-tag \
+            --title "Nori ${version}" \
+            --notes-file "${notes}"

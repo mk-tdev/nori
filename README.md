@@ -2,6 +2,20 @@
 
 A native, ocean-blue macOS dashboard for a busy laptop. Nori replaces the original Pulse branding with a flat wave icon. Built with SwiftUI and Swift Charts; macOS 14+ is required.
 
+## Install on Apple Silicon
+
+Download the latest `Nori-*-apple-silicon.zip` from [GitHub Releases](https://github.com/mk-tdev/nori/releases), unzip it, and move `Nori.app` to Applications.
+
+Nori is distributed for free without Apple Developer ID notarization. On first launch, macOS may block it. After attempting to open Nori once, open **System Settings → Privacy & Security**, scroll to Security, choose **Open Anyway**, and confirm **Open**. Only do this for a download from this repository whose SHA-256 value matches the attached checksum file.
+
+Homebrew installation is also available:
+
+```sh
+brew install --cask mk-tdev/tap/nori
+```
+
+The same one-time Gatekeeper step applies to the Homebrew installation.
+
 ## Build and open
 
 ```sh
