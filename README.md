@@ -1,6 +1,49 @@
-# Nori
+<p align="center">
+  <img src="docs/images/nori-social.png" alt="Nori — Your Mac, at a glance" width="100%">
+</p>
 
-A native, ocean-blue macOS dashboard for a busy laptop. Nori replaces the original Pulse branding with a flat wave icon. Built with SwiftUI and Swift Charts; macOS 14+ is required.
+<h1 align="center">Nori</h1>
+
+<p align="center">
+  A calm, ocean-blue command center for a busy Mac.<br>
+  See CPU, GPU, memory, heat, apps, Docker, and developer caches in one native dashboard.
+</p>
+
+<p align="center">
+  <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-native-35AAF2?style=flat-square">
+  <img alt="macOS 14 or later" src="https://img.shields.io/badge/macOS-14%2B-8D8BFF?style=flat-square">
+  <img alt="SwiftUI" src="https://img.shields.io/badge/SwiftUI-native-57D6D0?style=flat-square">
+  <a href="https://github.com/mk-tdev/nori/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/mk-tdev/nori?style=flat-square&color=35AAF2"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/mk-tdev/nori/releases/latest"><strong>Download Nori</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#install-on-apple-silicon"><strong>Install with Homebrew</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#features"><strong>Explore features</strong></a>
+</p>
+
+![Nori system overview](docs/images/nori-hero.png)
+
+Nori turns noisy system metrics into a view you can understand at a glance. It is built with SwiftUI and Swift Charts, runs locally, and stays useful while Codex, Claude, browsers, containers, and builds compete for your Mac.
+
+## See what your Mac is doing
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/nori-cpu-cores.png" alt="Nori per-core CPU workload">
+      <br><strong>Every core, live.</strong><br>
+      Open CPU details to see the workload on each logical core, refreshed every two seconds.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/nori-caches.png" alt="Nori developer cache cleanup">
+      <br><strong>Reclaim space with confidence.</strong><br>
+      Scan developer caches, clean one item at a time, and keep session history and installed tools protected.
+    </td>
+  </tr>
+</table>
 
 ## Install on Apple Silicon
 
