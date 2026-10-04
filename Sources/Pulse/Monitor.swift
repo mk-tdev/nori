@@ -11,6 +11,8 @@ struct Sample: Identifiable {
     let memory: Double
     let gpu: Double?
     let temperature: Double?
+    let networkDownload: Double
+    let networkUpload: Double
 }
 struct Reading {
     var cpu: Double = 0
@@ -25,6 +27,7 @@ struct Reading {
     var diskTotal: Int64 = 1
     var temperature: Double = -1
     var gpu = GPUReading()
+    var network = NetworkReading()
     var processes: [ProcessReading] = []
     var time = Date()
     var valid = false
@@ -37,6 +40,7 @@ final class Collector: @unchecked Sendable {
     private var oldPageouts: UInt64?
     private var oldVMTime: TimeInterval?
     private var oldTime = ProcessInfo.processInfo.systemUptime
+    private let networkSampler = NetworkSampler()
     func collect() -> Reading {
         var r = Reading()
         var pressureRaw: Int32 = 0
@@ -104,6 +108,7 @@ final class Collector: @unchecked Sendable {
         if let values = try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [.volumeAvailableCapacityKey, .volumeTotalCapacityKey]) {
             r.diskFree = Int64(values.volumeAvailableCapacity ?? 0); r.diskTotal = Int64(values.volumeTotalCapacity ?? 1)
         }
+        r.network = networkSampler.collect()
         r.temperature = pulse_temperature()
         var buffer = [PulseProcess](repeating: PulseProcess(), count: 8192)
         let n = pulse_processes(&buffer, Int32(buffer.count))
@@ -199,7 +204,17 @@ final class Collector: @unchecked Sendable {
                 guard !self.paused else { return }
                 self.reading = result
                 self.thermal = ProcessInfo.processInfo.thermalState
-                if result.valid { self.history.append(Sample(time: result.time, cpu: result.cpu, memory: result.memory, gpu: result.gpu.available ? result.gpu.device : nil, temperature: result.temperature > 0 ? result.temperature : nil)) }
+                if result.valid {
+                    self.history.append(Sample(
+                        time: result.time,
+                        cpu: result.cpu,
+                        memory: result.memory,
+                        gpu: result.gpu.available ? result.gpu.device : nil,
+                        temperature: result.temperature > 0 ? result.temperature : nil,
+                        networkDownload: result.network.downloadBytesPerSecond,
+                        networkUpload: result.network.uploadBytesPerSecond
+                    ))
+                }
                 self.evaluateAlerts(result)
                 self.history.removeAll { $0.time < Date().addingTimeInterval(-900) }
             }

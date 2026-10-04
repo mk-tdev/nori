@@ -2,6 +2,41 @@ import XCTest
 @testable import Pulse
 
 final class NoriTests: XCTestCase {
+    func testNetworkRateCalculatorUsesElapsedTimeAndResetsSafely() {
+        var calculator = NetworkRateCalculator()
+        XCTAssertEqual(
+            calculator.sample(interface: "en0", counters: NetworkCounters(received: 1_000, sent: 2_000), at: 10),
+            NetworkRates()
+        )
+        XCTAssertEqual(
+            calculator.sample(interface: "en0", counters: NetworkCounters(received: 5_000, sent: 4_000), at: 12),
+            NetworkRates(download: 2_000, upload: 1_000)
+        )
+        XCTAssertEqual(
+            calculator.sample(interface: "en1", counters: NetworkCounters(received: 9_000, sent: 9_000), at: 14),
+            NetworkRates()
+        )
+        XCTAssertEqual(
+            calculator.sample(interface: "en1", counters: NetworkCounters(received: 100, sent: 100), at: 16),
+            NetworkRates()
+        )
+        XCTAssertEqual(calculator.sample(interface: nil, counters: nil, at: 18), NetworkRates())
+    }
+
+    func testNetworkActivityLabelsDominantTrafficDirection() {
+        var reading = NetworkReading(status: .connected, downloadBytesPerSecond: 4_000, uploadBytesPerSecond: 1_000)
+        XCTAssertTrue(reading.active)
+        XCTAssertEqual(reading.activityName, "Downloading")
+        reading.downloadBytesPerSecond = 1_000
+        reading.uploadBytesPerSecond = 4_000
+        XCTAssertEqual(reading.activityName, "Uploading")
+        reading.downloadBytesPerSecond = 3_000
+        XCTAssertEqual(reading.activityName, "Sending + receiving")
+        reading.downloadBytesPerSecond = 0
+        reading.uploadBytesPerSecond = 0
+        XCTAssertEqual(reading.activityName, "Quiet")
+    }
+
     func testGPUAttributionCombinesProcessesByOwningApp() {
         let usage = [
             GPUAttribution.ProcessUsage(pid: 10, name: "Codex Helper", usage: 12.5),

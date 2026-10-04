@@ -36,6 +36,7 @@ final class NoriAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
             print("GPU: \(r.gpu.device)% | Renderer: \(r.gpu.renderer)% | Tiler: \(r.gpu.tiler)% | Cores: \(r.gpu.coreCount) | Memory: \(bytes(r.gpu.inUseMemory))")
             for app in r.gpu.apps.prefix(5) { print("GPU app \(app.name): \(String(format: "%.1f", app.usage))%") }
             print("Memory pressure: \(r.pressure.rawValue) | App groups: \(AppGrouping.groups(r.processes).count)")
+            print("Network: \(r.network.status.rawValue) via \(r.network.interfaceType) \(r.network.interfaceName ?? "unknown") | ↓ \(rate(r.network.downloadBytesPerSecond)) | ↑ \(rate(r.network.uploadBytesPerSecond))")
             if CommandLine.arguments.contains("--docker") { let docker = DockerCollector.collect(); print("Docker: \(docker.status)"); for c in docker.containers { print("\(c.name): \(c.cpuText) CPU, \(c.memoryText)") } }
             if CommandLine.arguments.contains("--caches") {
                 let snapshot = CacheCollector.scan()
@@ -73,6 +74,7 @@ struct MenuContent: View {
         Text("Memory: \(Int(monitor.reading.memory))%")
         Text("Thermal state: \(monitor.thermalName)")
         Text("Memory pressure: \(monitor.reading.pressure.rawValue)")
+        Text("Internet: \(monitor.reading.network.status.rawValue) · ↓ \(rate(monitor.reading.network.downloadBytesPerSecond)) · ↑ \(rate(monitor.reading.network.uploadBytesPerSecond))")
         Text("Sustained-load alerts: \(monitor.alerts.count)")
         if monitor.reading.temperature > 0 { Text("Sensors: \(Int(monitor.reading.temperature))°C") }
         Divider()
@@ -117,6 +119,7 @@ struct Dashboard: View {
                         Spacer()
                     }.padding(16).background(ocean.opacity(0.06), in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(ocean.opacity(0.13)))
                     KeepAwakeCard(monitor: monitor).id("Awake")
+                    NetworkCard(monitor: monitor).id("Network")
                     GPUCard(monitor: monitor).id("GPU")
                     MemoryPressureCard(monitor: monitor).id("Memory")
                     activity
@@ -149,7 +152,7 @@ struct Dashboard: View {
             }.padding(.top, 34)
             Text("YOUR MAC, AT A GLANCE").font(.system(size: 9, weight: .semibold)).tracking(1.5).foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(["Overview", "Awake", "GPU", "Apps", "Docker", "Caches", "Memory", "Temperature", "Alerts"], id: \.self) { section in
+                ForEach(["Overview", "Awake", "Network", "GPU", "Apps", "Docker", "Caches", "Memory", "Temperature", "Alerts"], id: \.self) { section in
                     Button { withAnimation { proxy.scrollTo(section, anchor: .top) } } label: {
                         HStack {
                             Text(section)

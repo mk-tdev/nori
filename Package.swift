@@ -2,6 +2,6 @@
 import PackageDescription
 let package = Package(name: "Nori", platforms: [.macOS(.v14)], products: [.executable(name: "Nori", targets: ["Pulse"])], targets: [
     .target(name: "PulseSystem", linkerSettings: [.linkedFramework("IOKit")]),
-    .executableTarget(name: "Pulse", dependencies: ["PulseSystem"], linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("Metal")]),
+    .executableTarget(name: "Pulse", dependencies: ["PulseSystem"], linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("Metal"), .linkedFramework("Network"), .linkedFramework("SystemConfiguration")]),
     .testTarget(name: "NoriTests", dependencies: ["Pulse"], path: "Tests")
 ])
