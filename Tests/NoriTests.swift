@@ -18,8 +18,8 @@ final class NoriTests: XCTestCase {
     }
 
     func testGitHubOwnerParsingSupportsHTTPAndSSHRemotes() {
-        XCTAssertEqual(ProfileInspector.githubOwner(from: "https://github.com/mk-tdev/nori.git"), "mk-tdev")
-        XCTAssertEqual(ProfileInspector.githubOwner(from: "git@github.com:pixeltrendanalytics-devs/app.git"), "pixeltrendanalytics-devs")
+        XCTAssertEqual(ProfileInspector.githubOwner(from: "https://github.com/example-user/example-app.git"), "example-user")
+        XCTAssertEqual(ProfileInspector.githubOwner(from: "git@github.com:example-org/app.git"), "example-org")
         XCTAssertNil(ProfileInspector.githubOwner(from: "https://gitlab.com/team/app.git"))
     }
 
