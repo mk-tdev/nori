@@ -2,6 +2,69 @@ import XCTest
 @testable import Pulse
 
 final class NoriTests: XCTestCase {
+    func testAccountStoreRoundTripsWithoutCredentialMaterial() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        let file = root.appendingPathComponent("accounts.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = VercelSession(id: UUID(), name: "Work", directory: "/private/work-vercel", username: "builder", isDefault: false)
+        let profile = DeveloperProfile(id: UUID(), name: "Work", githubLogin: "work-user", vercelSessionID: session.id, vercelTeam: "studio", gitName: "Builder", gitEmail: "builder@example.com", projectPath: "/tmp/project")
+        let expected = AccountStoreData(profiles: [profile], vercelSessions: [session], activeProfileID: profile.id)
+        try AccountStore.save(expected, to: file)
+        XCTAssertEqual(AccountStore.load(from: file), expected)
+        let text = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertFalse(text.localizedCaseInsensitiveContains("token"))
+        let permissions = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(permissions?.intValue ?? 0, 0o600)
+    }
+
+    func testGitHubOwnerParsingSupportsHTTPAndSSHRemotes() {
+        XCTAssertEqual(ProfileInspector.githubOwner(from: "https://github.com/mk-tdev/nori.git"), "mk-tdev")
+        XCTAssertEqual(ProfileInspector.githubOwner(from: "git@github.com:pixeltrendanalytics-devs/app.git"), "pixeltrendanalytics-devs")
+        XCTAssertNil(ProfileInspector.githubOwner(from: "https://gitlab.com/team/app.git"))
+    }
+
+    func testProfileSwitchAppliesVercelSelectionAndRepositoryIdentity() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let log = root.appendingPathComponent("commands.log")
+        let gh = try fakeExecutable(at: root.appendingPathComponent("gh"), body: "echo \"$@\" >> \"\(log.path)\"\nexit 0")
+        let vercel = try fakeExecutable(at: root.appendingPathComponent("vercel"), body: "echo \"$@\" >> \"\(log.path)\"\nexit 0")
+        let project = root.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        XCTAssertEqual(runGit(["init", project.path]), 0)
+        let session = VercelSession(id: UUID(), name: "Work", directory: root.appendingPathComponent("vercel-work").path, username: "work", isDefault: false)
+        let profile = DeveloperProfile(id: UUID(), name: "Work", githubLogin: "work-user", vercelSessionID: session.id, vercelTeam: "work-team", gitName: "Work Author", gitEmail: "work@example.com", projectPath: project.path)
+        let activeFile = root.appendingPathComponent("active-vercel")
+        let result = ProfileSwitcher.apply(profile, sessions: [session], previousGitHubLogin: "personal-user", githubExecutable: gh.path, vercelExecutable: vercel.path, activeVercelFile: activeFile)
+        XCTAssertTrue(result.success, result.message)
+        XCTAssertEqual(try String(contentsOf: activeFile, encoding: .utf8), session.directory)
+        XCTAssertEqual(gitOutput(project, ["config", "--local", "--get", "user.name"]), "Work Author")
+        XCTAssertEqual(gitOutput(project, ["config", "--local", "--get", "user.email"]), "work@example.com")
+        let commands = try String(contentsOf: log, encoding: .utf8)
+        XCTAssertTrue(commands.contains("auth switch --hostname github.com --user work-user"))
+        XCTAssertTrue(commands.contains("teams switch work-team"))
+    }
+
+    func testProfileSwitchRollsBackGitHubAndVercelWhenTeamSwitchFails() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let log = root.appendingPathComponent("commands.log")
+        let gh = try fakeExecutable(at: root.appendingPathComponent("gh"), body: "echo \"$@\" >> \"\(log.path)\"\nexit 0")
+        let vercel = try fakeExecutable(at: root.appendingPathComponent("vercel"), body: "exit 1")
+        let session = VercelSession(id: UUID(), name: "Work", directory: "/tmp/work", username: nil, isDefault: false)
+        let profile = DeveloperProfile(id: UUID(), name: "Work", githubLogin: "work-user", vercelSessionID: session.id, vercelTeam: "missing-team", gitName: "", gitEmail: "", projectPath: "")
+        let activeFile = root.appendingPathComponent("active-vercel")
+        try Data("/tmp/personal".utf8).write(to: activeFile)
+        let result = ProfileSwitcher.apply(profile, sessions: [session], previousGitHubLogin: "personal-user", githubExecutable: gh.path, vercelExecutable: vercel.path, activeVercelFile: activeFile)
+        XCTAssertFalse(result.success)
+        XCTAssertEqual(try String(contentsOf: activeFile, encoding: .utf8), "/tmp/personal")
+        let commands = try String(contentsOf: log, encoding: .utf8)
+        XCTAssertTrue(commands.contains("--user work-user"))
+        XCTAssertTrue(commands.contains("--user personal-user"))
+    }
+
     func testNetworkRateCalculatorUsesElapsedTimeAndResetsSafely() {
         var calculator = NetworkRateCalculator()
         XCTAssertEqual(
@@ -210,5 +273,24 @@ final class NoriTests: XCTestCase {
         XCTAssertEqual(TemperatureBand(reading: 75), .warm)
         XCTAssertEqual(TemperatureBand(reading: 90), .hot)
         XCTAssertEqual(TemperatureBand(reading: .nan), .unavailable)
+    }
+
+    private func fakeExecutable(at url: URL, body: String) throws -> URL {
+        try Data("#!/bin/sh\n\(body)\n".utf8).write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        return url
+    }
+
+    private func runGit(_ arguments: [String]) -> Int32 {
+        let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/git"); process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+        do { try process.run(); process.waitUntilExit(); return process.terminationStatus } catch { return -1 }
+    }
+
+    private func gitOutput(_ project: URL, _ arguments: [String]) -> String {
+        let pipe = Pipe(); let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/git"); process.arguments = ["-C", project.path] + arguments
+        process.standardOutput = pipe; process.standardError = FileHandle.nullDevice
+        try? process.run(); process.waitUntilExit()
+        return String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

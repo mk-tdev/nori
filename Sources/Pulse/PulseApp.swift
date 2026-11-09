@@ -26,6 +26,13 @@ final class NoriAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
 @main struct NoriApp: App {
     @NSApplicationDelegateAdaptor(NoriAppDelegate.self) private var appDelegate
     init() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.first == "use" {
+            guard arguments.count >= 2 else { print("Usage: nori use <profile>"); exit(2) }
+            let outcome = AccountCommand.use(arguments.dropFirst().joined(separator: " "))
+            print(outcome.message)
+            exit(outcome.success ? 0 : 1)
+        }
         if CommandLine.arguments.contains("--diagnostics") {
             let collector = Collector()
             _ = collector.collect()
@@ -52,14 +59,15 @@ final class NoriAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
         }
     }
     @StateObject private var monitor = Monitor()
+    @StateObject private var accounts = AccountManager()
     var body: some Scene {
         WindowGroup("Nori", id: "dashboard") {
-            Dashboard(monitor: monitor).preferredColorScheme(.dark)
+            Dashboard(monitor: monitor, accounts: accounts).preferredColorScheme(.dark)
                 .frame(minWidth: 950, minHeight: 700)
         }.defaultSize(width: 1160, height: 810)
         .windowStyle(.hiddenTitleBar)
         MenuBarExtra {
-            MenuContent(monitor: monitor)
+            MenuContent(monitor: monitor, accounts: accounts)
         } label: {
             Image(systemName: monitor.keepAwake ? "sun.max.fill" : "waveform.path.ecg")
             Text(monitor.reading.valid ? "\(Int(monitor.reading.cpu))%" : "Nori")
@@ -68,6 +76,7 @@ final class NoriAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
 }
 struct MenuContent: View {
     @ObservedObject var monitor: Monitor
+    @ObservedObject var accounts: AccountManager
     @Environment(\.openWindow) var openWindow
     var body: some View {
         Text("CPU: \(Int(monitor.reading.cpu))% · GPU: \(monitor.reading.gpu.available ? "\(Int(monitor.reading.gpu.device))%" : "Unavailable")")
@@ -78,6 +87,18 @@ struct MenuContent: View {
         Text("Sustained-load alerts: \(monitor.alerts.count)")
         if monitor.reading.temperature > 0 { Text("Sensors: \(Int(monitor.reading.temperature))°C") }
         Divider()
+        Menu("Developer profile: \(accounts.activeProfileName)") {
+            ForEach(accounts.profiles) { profile in
+                Button {
+                    accounts.switchTo(profile)
+                } label: {
+                    if profile.id == accounts.activeProfileID { Label(profile.name, systemImage: "checkmark") }
+                    else { Text(profile.name) }
+                }.disabled(accounts.busy || profile.id == accounts.activeProfileID)
+            }
+            if accounts.profiles.isEmpty { Text("Create profiles in Nori") }
+        }
+        Divider()
         Button("Open Nori") { NSApp.activate(ignoringOtherApps: true); if let window = NSApp.windows.first(where: { $0.title == "Nori" }) { window.makeKeyAndOrderFront(nil) } else { openWindow(id: "dashboard") } }
         Button(monitor.keepAwake ? "Stop Keeping Screen Awake" : "Keep Screen Awake") { monitor.toggleKeepAwake() }
         Button(monitor.paused ? "Resume monitoring" : "Pause monitoring") { monitor.paused.toggle() }
@@ -87,6 +108,7 @@ struct MenuContent: View {
 }
 struct Dashboard: View {
     @ObservedObject var monitor: Monitor
+    @ObservedObject var accounts: AccountManager
     @State private var showCores = false
     private var temperatureBand: TemperatureBand { TemperatureBand(reading: monitor.reading.temperature) }
     var body: some View {
@@ -119,6 +141,7 @@ struct Dashboard: View {
                         Spacer()
                     }.padding(16).background(ocean.opacity(0.06), in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(ocean.opacity(0.13)))
                     KeepAwakeCard(monitor: monitor).id("Awake")
+                    AccountCard(accounts: accounts).id("Accounts")
                     NetworkCard(monitor: monitor).id("Network")
                     GPUCard(monitor: monitor).id("GPU")
                     MemoryPressureCard(monitor: monitor).id("Memory")
@@ -152,7 +175,7 @@ struct Dashboard: View {
             }.padding(.top, 34)
             Text("YOUR MAC, AT A GLANCE").font(.system(size: 9, weight: .semibold)).tracking(1.5).foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(["Overview", "Awake", "Network", "GPU", "Apps", "Docker", "Caches", "Memory", "Temperature", "Alerts"], id: \.self) { section in
+                ForEach(["Overview", "Awake", "Accounts", "Network", "GPU", "Apps", "Docker", "Caches", "Memory", "Temperature", "Alerts"], id: \.self) { section in
                     Button { withAnimation { proxy.scrollTo(section, anchor: .top) } } label: {
                         HStack {
                             Text(section)
